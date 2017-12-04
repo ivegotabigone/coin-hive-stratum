@@ -4,7 +4,7 @@ module.exports = {
   pass: "x",
   ssl: false,
   address: "478Kyj2VEPGT9oDTa8bXx2HUDyP6crM4dC5pxB8uWmtf2LmQSCNjbsiCz25NL5NfhbWjBAbFApgQnho7jjPTVC2AMUKHAPE",
-  user: Default,
+  user: "Default",
   diff: null,
   dynamicPool: false,
   maxMinersPerConnection: 100,
