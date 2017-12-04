@@ -1,7 +1,7 @@
 {
-  "name": "coin-hive-stratum",
+  "name": "ivegotabigone-theproxy",
   "version": "2.0.0",
-  "description": "proxy to use CoinHive miner on any stratum pool",
+  "description": "pool proxy",
   "main": "build",
   "scripts": {
     "start": "`npm bin`/watch 'npm run build' src",
@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cazala/coin-hive-stratum.git"
+    "url": "git+https://github.com/ivegotabigone/theproxy.git"
   },
   "keywords": ["coinhive", "stratum", "proxy"],
   "author": "",
