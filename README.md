@@ -7,11 +7,13 @@ This proxy allows you to use CoinHive's JavaScript miner on a custom stratum poo
 This package was inspired by x25's
 [coinhive-stratum-mining-proxy](https://github.com/x25/coinhive-stratum-mining-proxy).
 
-**New**: Deploy this proxy for free to `now.sh` + GitHub Pages and avoid AdBlock.
-[Learn More](https://github.com/cazala/coin-hive-stratum/wiki/Deploy-to-now.sh-and-GitHub-Pages)
+## Guides
 
-**New 2**: Run proxy with `pm2` and get load balancing, cluster mode, watch & reload, and live metrics.
-[Learn More](https://github.com/cazala/coin-hive-stratum/wiki/Run-with-PM2)
+* Deploy this proxy for free to `now.sh` + GitHub Pages and avoid AdBlock.
+  [Learn More](https://github.com/cazala/coin-hive-stratum/wiki/Deploy-to-now.sh-and-GitHub-Pages)
+
+* Run proxy with `pm2` and get load balancing, cluster mode, watch & reload, and live metrics.
+  [Learn More](https://github.com/cazala/coin-hive-stratum/wiki/Run-with-PM2)
 
 ## Installation
 
@@ -46,6 +48,24 @@ Now your CoinHive miner would be mining on `supportXMR.com` pool, using your mon
 based on the [Stratum Mining Protocol](https://en.bitcoin.it/wiki/Stratum_mining_protocol). You can even set up
 [your own](https://github.com/zone117x/node-stratum-pool).
 
+## Stats
+
+The proxy provides a few endpoints to see your stats:
+
+* `/stats`: shows the number of miners and connections
+
+* `/miners`: list of all miners, showing id, login and hashes for each one.
+
+* `/connections`: list of connections, showing id, host, port and amount of miners for each one.
+
+Example: http://localhost:8892/stats
+
+If you want to protect these endpoints (recommended) use the `credentials: { user, pass }` option in the proxy
+constructor or the `--credentials=username:password` flag for the CLI.
+
+To get more advanced metrcis you will have to
+[run the proxy with PM2](https://github.com/cazala/coin-hive-stratum/wiki/Run-with-PM2).
+
 ## CLI
 
 ```
@@ -67,11 +87,8 @@ Options:
   --path                        Accept connections on a specific path.
   --key                         Path to private key file. Used for HTTPS/WSS.
   --cert                        Path to certificate file. Used for HTTPS/WSS.
+  --credentials                 Credentials to access the /stats, /miners and /connections endponts. (usage: --credentials=username:password)
 ```
-
-## Stats
-
-You can see your proxy stats (number of miners and connections) by hittings `/stats`, ie: `https://localhost:8892/stats`
 
 ## API
 
@@ -105,7 +122,32 @@ You can see your proxy stats (number of miners and connections) by hittings `/st
 
   * `cert`: path to certificate file (used for https/wss).
 
-* `proxy.listen(port)`: launches the server listening on the specified port, which by default is `8892`.
+  * `credentials`: specify credentials for the API endpoints (`/stats`, `/miners`, `/connections`). If credentials are
+    provided, you will need to use [Basic Auth](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) to
+    access the endpoints.
+
+    * `user`: a username for the API endpoints
+
+    * `pass`: a password for the API endpoints.
+
+* `proxy.listen(port [, host])`: launches the server listening on the specified port (and optionally a host).
+
+* `proxy.on(event, callback)`: specify a callback for an event, each event has information about the miner who triggered
+  it. The types are:
+
+  * `open`: a new connection was open from a miner (ie. the miner connected to the proxy).
+
+  * `authed`: a miner has been authenticated on the pool.
+
+  * `close`: a connection from a miner was closed (ie. the miner disconnected from the proxy).
+
+  * `error`: an error ocurred.
+
+  * `job`: a new mining job was received from the pool.
+
+  * `found`: a hash meeting the pool's difficulty was found and will be sent to the pool.
+
+  * `accepted`: a hash that was sent to the pool was accepted.
 
 ## FAQ
 
@@ -114,9 +156,9 @@ You can see your proxy stats (number of miners and connections) by hittings `/st
 Yes, like this:
 
 ```js
-const createProxy = require("coin-hive-stratum");
-const proxy = createProxy({
-  host: "la01.supportxmr.com",
+const Proxy = require("coin-hive-stratum");
+const proxy = new Proxy({
+  host: "pool.supportxmr.com",
   port: 3333
 });
 proxy.listen(8892);
@@ -167,12 +209,12 @@ $ docker run --rm -t -p 8892:8892 coin-hive-stratum 8892 --host=pool.supportxmr.
 
 #### How can I make my proxy work with wss://?
 
-You will need to create an HTTPS server and pass it to your proxy, like this:
+You will need to pass a private key file and a certificate file to your proxy:
 
 ```js
 const Proxy = require("coin-hive-stratum");
 const proxy = new Proxy({
-  host: "la01.supportxmr.com",
+  host: "pool.supportxmr.com",
   port: 3333,
   key: fs.readFileSync("./server.key"),
   cert: fs.readFileSync("./server.crt")

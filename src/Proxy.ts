@@ -1,3 +1,4 @@
+import * as EventEmitter from "events";
 import * as WebSocket from "ws";
 import * as url from "url";
 import * as http from "http";
@@ -6,8 +7,19 @@ import * as defaults from "../config/defaults";
 import Connection from "./Connection";
 import Miner from "./Miner";
 import Donation, { Options as DonationOptions } from "./Donation";
-import { Dictionary, Stats, WebSocketQuery } from "src/types";
-import { Request } from "_debugger";
+import {
+  Dictionary,
+  Stats,
+  WebSocketQuery,
+  ErrorEvent,
+  CloseEvent,
+  AcceptedEvent,
+  FoundEvent,
+  JobEvent,
+  AuthedEvent,
+  OpenEvent,
+  Credentials
+} from "src/types";
 import { ServerRequest } from "http";
 
 export type Options = {
@@ -25,9 +37,10 @@ export type Options = {
   cert: Buffer;
   path: string;
   server: http.Server | https.Server;
+  credentials: Credentials;
 };
 
-class Proxy {
+class Proxy extends EventEmitter {
   host: string = null;
   port: number = null;
   pass: string = null;
@@ -44,8 +57,10 @@ class Proxy {
   cert: Buffer = null;
   path: string = null;
   server: http.Server | https.Server = null;
+  credentials: Credentials = null;
 
-  constructor(constructorOptions: Options = defaults) {
+  constructor(constructorOptions: Partial<Options> = defaults) {
+    super();
     let options = Object.assign({}, defaults, constructorOptions) as Options;
     this.host = options.host;
     this.port = options.port;
@@ -61,22 +76,57 @@ class Proxy {
     this.cert = options.cert;
     this.path = options.path;
     this.server = options.server;
+    this.credentials = options.credentials;
+    this.on("error", () => {
+      /* prevent unhandled error events from stopping the proxy */
+    });
   }
 
-  listen(port: number): void {
+  listen(port: number, host?: string, callback?: () => void): void {
     // create server
     const isHTTPS = !!(this.key && this.cert);
     if (!this.server) {
       const stats = (req, res) => {
-        const url = require("url").parse(req.url);
-        if (url.pathname === "/stats") {
-          const body = JSON.stringify(this.getStats(), null, 2);
-          res.writeHead(200, {
-            "Content-Length": Buffer.byteLength(body),
-            "Content-Type": "application/json"
-          });
-          res.end(body);
+        if (this.credentials) {
+          const auth = require("basic-auth")(req);
+          if (!auth || auth.name !== this.credentials.user || auth.pass !== this.credentials.pass) {
+            res.statusCode = 401;
+            res.setHeader("WWW-Authenticate", 'Basic realm="Access to stats"');
+            res.end("Access denied");
+            return;
+          }
         }
+        const url = require("url").parse(req.url);
+        const proxyStats = this.getStats();
+        let body = JSON.stringify({
+          code: 404,
+          error: "Not Found"
+        });
+
+        if (url.pathname === "/stats") {
+          body = JSON.stringify(
+            {
+              miners: proxyStats.miners.length,
+              connections: proxyStats.connections.length
+            },
+            null,
+            2
+          );
+        }
+
+        if (url.pathname === "/miners") {
+          body = JSON.stringify(proxyStats.miners, null, 2);
+        }
+
+        if (url.pathname === "/connections") {
+          body = JSON.stringify(proxyStats.connections, null, 2);
+        }
+
+        res.writeHead(200, {
+          "Content-Length": Buffer.byteLength(body),
+          "Content-Type": "application/json"
+        });
+        res.end(body);
       };
       if (isHTTPS) {
         const certificates = {
@@ -127,9 +177,24 @@ class Proxy {
         pass,
         donations
       });
+      miner.on("open", (data: OpenEvent) => this.emit("open", data));
+      miner.on("authed", (data: AuthedEvent) => this.emit("authed", data));
+      miner.on("job", (data: JobEvent) => this.emit("job", data));
+      miner.on("found", (data: FoundEvent) => this.emit("found", data));
+      miner.on("accepted", (data: AcceptedEvent) => this.emit("accepted", data));
+      miner.on("close", (data: CloseEvent) => this.emit("close", data));
+      miner.on("error", (data: ErrorEvent) => this.emit("error", data));
       miner.connect();
     });
-    this.server.listen(port);
+    if (!host && !callback) {
+      this.server.listen(port);
+    } else if (!host && callback) {
+      this.server.listen(port, callback);
+    } else if (host && !callback) {
+      this.server.listen(port, host);
+    } else {
+      this.server.listen(port, host, callback);
+    }
     console.log(`listening on port ${port}` + (isHTTPS ? ", using a secure connection" : ""));
     if (wssOptions.path) {
       console.log(`path: ${wssOptions.path}`);
@@ -160,27 +225,50 @@ class Proxy {
       connections.push(connection);
       return connection;
     }
-    while (availableConnections.length > 1) {
-      const unusedConnection = availableConnections.pop();
-      unusedConnection.kill();
-    }
     return availableConnections.pop();
   }
 
   isAvailable(connection: Connection): boolean {
-    return connection.online && connection.miners.length < this.maxMinersPerConnection;
+    return (
+      connection.miners.length < this.maxMinersPerConnection &&
+      connection.donations.length < this.maxMinersPerConnection
+    );
+  }
+
+  isEmpty(connection: Connection): boolean {
+    return connection.miners.length === 0 && connection.donations.length === 0;
   }
 
   getStats(): Stats {
     return Object.keys(this.connections).reduce(
-      (stats, key, index) => ({
-        miners:
-          stats.miners + this.connections[key].reduce((miners, connection) => miners + connection.miners.length, 0),
-        connections: stats.connections + this.connections[key].filter(connection => !connection.donation).length
+      (stats, key) => ({
+        miners: [
+          ...stats.miners,
+          ...this.connections[key].reduce(
+            (miners, connection) => [
+              ...miners,
+              ...connection.miners.map(miner => ({
+                id: miner.id,
+                login: miner.login,
+                hashes: miner.hashes
+              }))
+            ],
+            []
+          )
+        ],
+        connections: [
+          ...stats.connections,
+          ...this.connections[key].filter(connection => !connection.donation).map(connection => ({
+            id: connection.id,
+            host: connection.host,
+            port: connection.port,
+            miners: connection.miners.length
+          }))
+        ]
       }),
       {
-        miners: 0,
-        connections: 0
+        miners: [],
+        connections: []
       }
     );
   }

@@ -11,9 +11,26 @@ export type Job = {
   id: string;
 };
 
+export type TakenJob = Job & {
+  done: boolean;
+};
+
 export type Stats = {
+  miners: MinerStats[];
+  connections: ConnectionStats[];
+};
+
+export type MinerStats = {
+  id: string;
+  login: string | null;
+  hashes: number;
+};
+
+export type ConnectionStats = {
+  id: string;
+  host: string;
+  port: string;
   miners: number;
-  connections: number;
 };
 
 export type WebSocketQuery = {
@@ -34,6 +51,8 @@ export type Socket = NodeJS.Socket & {
   destroy: () => void;
   setKeepAlive: (value: boolean) => void;
 };
+
+export type Credentials = { user: string; pass: string };
 
 // CoinHive
 
@@ -73,6 +92,7 @@ export type StratumRequest = {
   id: number;
   method: string;
   params: StratumRequestParams;
+  retry?: number;
 };
 
 export type StratumRequestParams = StratumLoginParams | StratumJob | StratumKeepAlive | StratumEmptyParams;
@@ -113,4 +133,45 @@ export type StratumError = {
 
 export type StratumKeepAlive = {
   id: string;
+};
+
+// Events
+
+export type OpenEvent = {
+  id: string;
+};
+
+export type AuthedEvent = {
+  id: string;
+  login: string;
+  auth: string;
+};
+
+export type JobEvent = {
+  id: string;
+  login: string;
+  job: Job;
+};
+
+export type FoundEvent = {
+  id: string;
+  login: string;
+  job: Job;
+};
+
+export type AcceptedEvent = {
+  id: string;
+  login: string;
+  hashes: number;
+};
+
+export type CloseEvent = {
+  id: string;
+  login: string;
+};
+
+export type ErrorEvent = {
+  id: string;
+  login: string;
+  error: StratumError;
 };

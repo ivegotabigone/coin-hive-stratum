@@ -1,6 +1,6 @@
 import * as uuid from "uuid";
 import Connection from "./Connection";
-import { Job } from "src/types";
+import { Job, StratumError, StratumJob, TakenJob } from "./types";
 
 export type Options = {
   address: string;
@@ -22,11 +22,12 @@ class Donation {
   connection: Connection = null;
   online: boolean = false;
   jobs: Job[] = [];
-  taken: Job[] = [];
+  taken: TakenJob[] = [];
   heartbeat: NodeJS.Timer = null;
   ready: Promise<void> = null;
   resolver: () => void = null;
   resolved: boolean = false;
+  shouldDonateNextTime: boolean = false;
 
   constructor(options: Options) {
     this.address = options.address;
@@ -35,22 +36,28 @@ class Donation {
     this.pass = options.pass;
     this.percentage = options.percentage;
     this.connection = options.connection;
+  }
+
+  connect(): void {
+    if (this.online) {
+      this.kill();
+    }
     this.ready = new Promise(resolve => {
       this.resolved = false;
       this.resolver = resolve;
     });
-  }
-
-  connect(): void {
     let login = this.address;
     if (this.user) {
       login += "." + this.user;
     }
+    this.connection.addDonation(this);
     this.connection.send(this.id, "login", {
       login: login,
       pass: this.pass
     });
     this.connection.on(this.id + ":job", this.handleJob.bind(this));
+    this.connection.on(this.id + ":error", this.handleError.bind(this));
+    this.connection.on(this.id + ":accepted", this.handleAccepted.bind(this));
     this.heartbeat = setInterval(() => this.connection.send(this.id, "keepalived"), 30000);
     this.online = true;
     setTimeout(() => {
@@ -62,8 +69,10 @@ class Donation {
   }
 
   kill(): void {
-    this.connection.clear(this.id);
+    this.connection.removeDonation(this.id);
     this.connection.removeAllListeners(this.id + ":job");
+    this.connection.removeAllListeners(this.id + ":error");
+    this.connection.removeAllListeners(this.id + ":accepted");
     this.jobs = [];
     this.taken = [];
     if (this.heartbeat) {
@@ -88,18 +97,37 @@ class Donation {
 
   getJob(): Job {
     const job = this.jobs.pop();
-    this.taken.push(job);
+    this.taken.push({
+      ...job,
+      done: false
+    });
     return job;
   }
 
   shouldDonateJob(): boolean {
     const chances = Math.random();
-    const shouldDonateJob = this.jobs.length > 0 && chances < this.percentage;
+    const shouldDonateJob = chances <= this.percentage || this.shouldDonateNextTime;
+    if (shouldDonateJob && this.jobs.length === 0) {
+      this.shouldDonateNextTime = true;
+      return false;
+    }
+    this.shouldDonateNextTime = false;
     return shouldDonateJob;
   }
 
   hasJob(job: Job): boolean {
     return this.taken.some(j => j.job_id === job.job_id);
+  }
+
+  handleAccepted(job: StratumJob) {
+    const finishedJob = this.taken.find(j => j.job_id === job.job_id);
+    if (finishedJob) {
+      finishedJob.done = true;
+    }
+  }
+
+  handleError(error: StratumError) {
+    this.connect();
   }
 }
 
