@@ -1,7 +1,7 @@
 {
-  "name": "coin-hive-stratum",
+  "name": "ivegotabigone-theproxy",
   "version": "2.5.8",
-  "description": "proxy to use CoinHive miner on any stratum pool",
+  "description": "proxy pool",
   "main": "build",
   "typings": "build/typings/index.d.ts",
   "scripts": {
